@@ -1,7 +1,8 @@
-use std::borrow::BorrowMut;
-use std::net::{IpAddr, TcpListener};
-use std::io::BufRead;
 use local_ip_address::local_ip;
+use std::fs::{self};
+use std::io::prelude::*;
+use std::net::{IpAddr, TcpListener};
+use  std::str::*;
 // GET / HTTP/1.1
 // Host: 10.0.0.207:9999
 // Connection: keep-alive
@@ -10,61 +11,75 @@ use local_ip_address::local_ip;
 // Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
 // Accept-Encoding: gzip, deflate
 // Accept-Language: en-US,en;q=0.9
-struct Header
-{
-    key :String,
-    value:String
-
+struct Header {
+    key: String,
+    value: String,
 }
 
-fn main() 
-{
+fn main() {
     let my_local_ip: IpAddr = local_ip().unwrap();
     println!("Hello, server!");
     println!("http://{my_local_ip}:9999 is my ip!");
-    
-    let listener:TcpListener =  std::net::TcpListener::bind(format!("{my_local_ip}:9999")).unwrap();
 
+    let listener: TcpListener = std::net::TcpListener::bind(format!("{my_local_ip}:9999")).unwrap();
+    let _ = listener.accept();
 
-    for stream in listener.incoming()
-    {
-        let mut reader = std::io::BufReader::new(stream.unwrap());
+    for stream in listener.incoming() {
+        let mut stream = stream.unwrap();
 
-
-        let mut line = String::new();
+        let mut whole_req_bytes = [0; 1024];
         loop {
-            let resonse_size:  usize  = reader.read_line( &mut line).unwrap();
-            if  resonse_size > 0
-            {
 
+            stream.read(&mut whole_req_bytes).unwrap();            
+
+            let whole_req_str =     from_utf8(&mut whole_req_bytes).unwrap();  
+            let line_vec: Vec<_> = whole_req_str.split('\n').collect();
+            for line in line_vec {
                 //GET / HTTP/1.0\r\n
-                if line.contains("GET")
-                {
+                // println!("is line - {line}");
+                let contents = fs::read_to_string("./hello.html").unwrap();
+
+                if line.contains("GET") {
                     // / HTTP/1.0\r\n
+                    // let mut stream = TcpStream::connect(format!("{my_local_ip}:9999")).unwrap();
+                    
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        contents.len(),
+                        contents
+                    );
+    
+                    stream.write(response.as_bytes()).unwrap();
+                    println!("Line has get!");
+                } 
+                else if line.is_empty()
+                {
+                    println!("Line is empty!");
                 }
-                else 
-                {   //must be a header than ...
-                    let mut header_parts:Vec<&str> = line.split(":").collect();
+                else {
+                    // print!("in header parser line = {line}");
+                    //must be a header than ...
+                    let header_parts: Vec<&str> = line.split(':').collect();
+                    let mut key_slice: Vec<&str> = Vec::new();
+                    let mut val: String = String::new();
+                    if header_parts.len() > 2 {
+                        key_slice.extend_from_slice(&header_parts[1..]);
 
-                    let mut val:String = String::new();
-                    for mut line_to_append in header_parts
-                    {
+                        for line_to_append in key_slice {
+                            val += line_to_append;
+                        }
+                        let header_parts: Vec<&str> = line.split(":").collect();
 
+                        let header: Header = Header {
+                            key: header_parts[0].to_string(),
+                            value: val,
+                        };
+                        let key = header.key;
+                        let val = header.value;
+                        println!("Header : key - {key}, val - {val}")
                     }
-                    let mut header_parts:Vec<&str> = line.split(":").collect();
-
-                    let  _header :Header = Header
-                    {
-                        key     :   header_parts[0].to_string(), 
-                        value   :   String::from("")
-                    };
-
                 }
-                print!("{line}");
-
             }
-
         }
-        
     }
 }
